@@ -1,6 +1,10 @@
 import os
 import sys
 
+# 设置环境变量避免 vLLM NCCL 分布式进程问题
+os.environ['CUDA_VISIBLE_DEVICES'] = '0'
+os.environ['VLLM_WORKER_MULTIPROC_METHOD'] = 'spawn'
+
 from dataflow.serving import APILLMServing_request
 from dataflow.utils.storage import FileStorage
 from dataflow.operators.pdf2vqa import VQAExtractor

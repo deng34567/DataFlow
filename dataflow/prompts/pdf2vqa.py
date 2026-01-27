@@ -93,69 +93,47 @@ class QAExtractPrompt(PromptABC):
         pass
 
     def build_prompt(self, subject: str = "math") -> str:
-        PROMPT = f"""
-        You are an expert in {subject}. You are given a json file. Your task is to segment the content, insert images tags, and extract labels:
-1. Every json item has an "id" field. Your main task is to output this field.
-2. You need to segment the content into multiple `<qa_pair>`…`</qa_pair>` blocks, each containing a question and its corresponding answer with solution.
-3. If the problem or answer/solution is not complete, omit them. An answer/solution should be considered complete as long as either the answer or solution exists.
-4. You need to put the images id into proper positions. You could look at the caption or context to decide where to put the image tags.
-5. You will also need to extract the chapter title and each problem's label/number from the text.
-6. You only need to output "id" field for **chapter titles, questions and solutions**. DO NOT OUTPUT ORIGINAL TEXT. Use ',' to separate different ids.
-7. However, use original labels/numbers for labels, and use original numbers for answers. DO NOT output "id" field for labels and answers. You will need to extract them from the text.
-"""
-        PROMPT +=f"""
-Strict extraction rules:
-** About questions and answers/solutions **
-- Preserve each problem’s original label/number, such as "例1", "Example 3", "习题1", "11". Do not include the period after the number. Use Arabic numerals only. For example, if the label is "例一", convert it to "例1". If the label is "IV", convert it to "4". 
-- If the full label is "三、16", keep only "16". If the full label is "5.4", keep only "4".
-- If there are multiple sub-questions (such as "(1)", "(a)") under one main question, always put them together in the same `<qa_pair>`…`</qa_pair>` block.
-- If a question and its answer/solution are contiguous, wrap them together as a single `<qa_pair>`…`</qa_pair>` block, e.g.:
-  `<qa_pair><label>1</label><question>…</question><answer>…</answer><solution>…</solution></qa_pair>`
-- If only questions or only answers/solutions appear, wrap each question or answer/solution in a `<qa_pair>`…`</qa_pair>` block with the missing part left empty. For example, if only questions appear:
-  `<qa_pair><label>1</label><question>…</question><answer></answer><solution></solution></qa_pair>`
-- In total, there are 7 possibilities: only question, only answer, only solution, question with answer, question with solution, answer with solution, full question and answer and solution. 
-- If multiple qa pairs appear, wrap each qa pair in its own `<qa_pair>`…`</qa_pair>` block.
-- If you do not see the full solution, only extract the short answer and leave the solution empty. YOU MUST KEEP SHORT ANSWERS !!!
-** About chapter/section titles **
-- Always enclose qa pairs in a `<chapter>`…`</chapter>` block, where <title>MAIN_TITLE_ID</title> is the id of the chapter title or section title.
-- Normally, chapter/section titles appear before the questions/answers in an independent json item.
-- There could be multiple `<chapter>`…`</chapter>` blocks if multiple chapters/sections exist. 
-- **Any title followed by a question/answer whose label/number is not 1, or title with a score, should NOT be extracted.**
-- Do not use nested titles.
-- Leave the title blank if there is no chapter title. 
-** About figures/diagrams **
-- Whenever the question or answer/solution refers to a figure or diagram, record its "id" in question/answer/solution just like other text content.
-- You MUST include all images referenced in the question/answer/solution.
+        PROMPT = f"""你是一位{subject}专家。请从下面的JSON数据中提取试题结构。
 
+## 任务说明
+输入是一个JSON数组，每个元素都有"id"字段和内容（text、image、table等）。
+你需要识别其中的章节标题、试题和答案，并按指定格式输出。
 
-If no qualifying content is found, output:
+## 输出格式要求
+使用XML标签格式输出，结构如下：
+
+```
+<chapter><title>章节标题的id</title>
+<qa_pair><label>题号</label><question>题目内容的id列表</question>
+<answer>答案文本</answer><solution>解答过程的id列表</solution></qa_pair>
+</chapter>
+```
+
+## 字段说明
+- <title>: 填写章节标题对应的id（如果有的话），没有则留空
+- <label>: 填写题目编号，如"1"、"2"等，使用阿拉伯数字
+- <question>: 填写题目内容对应的id，多个id用逗号分隔，如"7,8,9,10,11"
+- <answer>: 填写简短答案（如"D"、"4"），从文本中提取原文
+- <solution>: 填写解答过程对应的id，如果没有解答则留空
+
+## 重要规则
+1. question和solution标签内只填id数字，不要填原文
+2. answer标签内填写答案原文（如选项字母、数值等）
+3. 如果只有题目没有答案，answer和solution留空
+4. 如果只有答案没有题目，question留空
+5. 图片的id也要包含在对应的question或solution中
+
+## 示例
+假设输入包含：id=6是章节标题，id=7是第1题题目，id=8-11是选项，则输出：
+
+<chapter><title>6</title>
+<qa_pair><label>1</label><question>7,8,9,10,11</question>
+<answer></answer><solution></solution></qa_pair>
+</chapter>
+
+如果没有任何可识别的试题内容，输出：
 <empty></empty>
 
-Output format (all tags run together, no extra whitespace or newlines except between entries):
-<chapter><title>MAIN_TITLE_ID</title>
-<qa_pair><label>LABEL(EXTRACTED FROM TEXT)</label><question>QUESTION_IDS</question>
-<answer>ANSWER(EXTRACTED FROM SOLUTION)</answer><solution>SOLUTION_IDS</solution></qa_pair>
-<qa_pair><label>LABEL(EXTRACTED FROM TEXT)</label><question>QUESTION_IDS</question>
-<answer>ANSWER(EXTRACTED FROM SOLUTION)</answer><solution></solution></qa_pair>
-</chapter>
-<chapter><title>MAIN_TITLE_ID</title>
-<qa_pair><label>LABEL(EXTRACTED FROM TEXT)</label><question>QUESTION_IDS</question>
-<answer>ANSWER(EXTRACTED FROM SOLUTION)</answer><solution>SOLUTION_IDS</solution></qa_pair>
-</chapter>
-
-
-Example:
-<chapter><title>7</title>
-<qa_pair><label>1</label><question>2,3</question>
-<answer>Yes</answer><solution>5,6,7</solution></qa_pair>
-<qa_pair><label>2</label><question>8,9,10</question>
-<answer>3.14</answer><solution></solution></qa_pair>
-</chapter>
-<chapter><title>12</title>
-<qa_pair><label>1</label><question></question>
-<answer>2^6</answer><solution>16</solution></qa_pair>
-</chapter>
-
-Please now process the provided json and output your result.
+请分析下面的JSON数据并输出结果：
 """
         return PROMPT

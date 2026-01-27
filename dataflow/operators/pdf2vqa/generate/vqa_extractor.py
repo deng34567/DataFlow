@@ -21,7 +21,7 @@ from dataflow.utils.pdf2vqa.format_utils import merge_qa_pair, jsonl_to_md
 class VQAExtractor(OperatorABC):
     def __init__(self, 
                  llm_serving: LLMServingABC = None,
-                 mineru_backend: Literal["vlm-transformers","vlm-vllm-engine"] = "vlm-transformers",
+                 mineru_backend: Literal["pipeline", "vlm-http-client", "hybrid-http-client", "vlm-auto-engine", "hybrid-auto-engine"] = "hybrid-auto-engine",
                  max_chunk_len: int = 128000,):
         self.logger = get_logger()
         self.llm_serving = llm_serving
@@ -151,7 +151,7 @@ class VQAExtractor(OperatorABC):
                             pass
         return '\n'.join(texts)
     
-    def _extract_doc_layout(self, input_pdf_file_path: str, output_folder: str, mineru_backend: Literal["vlm-transformers","vlm-vllm-engine"] = "vlm-transformers"):
+    def _extract_doc_layout(self, input_pdf_file_path: str, output_folder: str, mineru_backend: Literal["pipeline", "vlm-http-client", "hybrid-http-client", "vlm-auto-engine", "hybrid-auto-engine"] = "hybrid-auto-engine"):
         """提取 PDF 的布局信息（合并自 VQAExtractDocLayoutMinerU）"""
         try:
             import mineru
@@ -226,6 +226,14 @@ class VQAExtractor(OperatorABC):
         qa_list = []
         with open(input_json_path, 'r') as infile:
             input_json = list(json.load(infile))
+        
+        # 处理思考模型的响应格式：如果包含 <answer>...</answer> 标签，则提取其中的内容
+        # 这是因为 APILLMServing_request.format_response 会将思考模型的响应包装成:
+        # <think>...</think>\n<answer>实际内容</answer>
+        answer_match = re.search(r'<answer>(.*?)</answer>', input_response, flags=re.DOTALL)
+        if answer_match:
+            input_response = answer_match.group(1)
+        
         # 提取title
         for chapter_block in re.findall(r'<chapter>(.*?)</chapter>', input_response, flags=re.DOTALL):
             title = re.search(r'<title>(.*?)</title>', chapter_block, flags=re.DOTALL)
@@ -423,6 +431,13 @@ class VQAExtractor(OperatorABC):
             output_dir = row["output_dir"]
             mode = row["mode"]
             output_root = row["output_root"]
+            
+            # DEBUG: 保存 LLM 响应到文件以便调试
+            debug_response_path = os.path.join(output_root, f"debug_llm_response_{mode}.txt")
+            with open(debug_response_path, 'w', encoding='utf-8') as f:
+                f.write(response if response else "EMPTY RESPONSE")
+            self.logger.info(f"DEBUG: LLM response saved to {debug_response_path}")
+            self.logger.info(f"DEBUG: Response length: {len(response) if response else 0}")
             
             image_prefix = f"{mode}_images"
             converted_json_path = json_path.replace('.json', '_converted.json')
