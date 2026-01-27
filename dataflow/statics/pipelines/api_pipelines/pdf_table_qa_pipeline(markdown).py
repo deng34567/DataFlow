@@ -52,7 +52,7 @@ class MarkdownTableQA_APIPipeline():
 
         self.llm_serving = APILLMServing_request(
             api_url="https://oneapi.hkgai.net/v1/chat/completions",
-            model_name="kimi-k2",
+            model_name="qwen3next",
             max_workers=8,
             temperature=0.3,
         )
@@ -68,18 +68,38 @@ class MarkdownTableQA_APIPipeline():
         # Step 2: Map-Reduce QA generation
         self.map_reduce_qa_generator = MapReduceQAGenerator(
             llm_serving=self.llm_serving,
-            lang="en",
-            max_qa=50,
+            lang="zh",
+            max_qa=100,
             max_relevant_chunks=6,
         )
 
         # Legacy: Direct mode generator (for small documents)
         self.table_qa_generator_direct = PDFTableQAGenerator(
             llm_serving=self.llm_serving,
-            lang="en",
+            lang="zh",
             max_qa=50,
             max_text_length=1000000,
         )
+
+    def _get_output_prefix(self) -> str:
+        """
+        Generate output file prefix based on markdown directory path.
+        This ensures outputs from different directories don't overwrite each other.
+        
+        Returns:
+            A sanitized string suitable for use in filenames
+        """
+        import re
+        # Get the last 2 parts of the path for a meaningful prefix
+        path_parts = self.markdown_dir.rstrip('/').split('/')
+        if len(path_parts) >= 2:
+            prefix = f"{path_parts[-2]}_{path_parts[-1]}"
+        else:
+            prefix = path_parts[-1] if path_parts else "default"
+        
+        # Sanitize: replace invalid filename characters with underscores
+        prefix = re.sub(r'[^\w\-]', '_', prefix)
+        return prefix
 
     def _read_markdown_files(self) -> list:
         """
@@ -129,9 +149,14 @@ class MarkdownTableQA_APIPipeline():
             print("[Error] No documents to process!")
             return
         
+        # Get output prefix based on markdown directory
+        output_prefix = self._get_output_prefix()
+        print(f"[Info] Output prefix: {output_prefix}")
+        
         # Create cache directory
-        os.makedirs("./.cache/markdown_table_qa", exist_ok=True)
-        os.makedirs("./.cache/markdown_table_qa/tables", exist_ok=True)
+        cache_dir = f"./.cache/markdown_table_qa/{output_prefix}"
+        os.makedirs(cache_dir, exist_ok=True)
+        os.makedirs(f"{cache_dir}/tables", exist_ok=True)
         
         if merge_mode:
             # Merge all documents into one before processing
@@ -162,7 +187,7 @@ class MarkdownTableQA_APIPipeline():
                 
                 # Generate Q/A using Map-Reduce directly
                 print("[Step 2] Generating Q/A pairs using Map-Reduce on merged documents...")
-                csv_output_dir = "./.cache/markdown_table_qa/tables"
+                csv_output_dir = f"{cache_dir}/tables"
                 result = self.map_reduce_qa_generator.process(chunks, csv_output_dir=csv_output_dir)
                 
                 merged_df['chunks'] = [chunks]
@@ -171,15 +196,15 @@ class MarkdownTableQA_APIPipeline():
                 merged_df['qa_plans'] = [result['plans']]
                 merged_df['table_csv_paths'] = [result['csv_paths']]
                 
-                # Save results
-                output_path = "./.cache/markdown_table_qa/markdown_table_qa_result.json"
+                # Save results with prefix in filename
+                output_path = f"{cache_dir}/{output_prefix}_markdown_table_qa_result.json"
                 merged_df.to_json(output_path, orient='records', force_ascii=False, indent=2)
                 
                 print(f"[Merge Mode] Extracted {len(result['csv_paths'])} tables to CSV")
                 print(f"[Merge Mode] Generated {len(result['qa_pairs'])} Q/A pairs from merged documents")
                 
                 # Also save QA pairs to a separate file for easy access
-                qa_output_path = "./.cache/markdown_table_qa/qa_pairs.json"
+                qa_output_path = f"{cache_dir}/{output_prefix}_qa_pairs.json"
                 import json
                 with open(qa_output_path, 'w', encoding='utf-8') as f:
                     json.dump(result['qa_pairs'], f, ensure_ascii=False, indent=2)
@@ -191,7 +216,7 @@ class MarkdownTableQA_APIPipeline():
                 outputs = self.table_qa_generator_direct.process_batch([merged_text])
                 
                 # Extract tables to CSV
-                csv_output_dir = "./.cache/markdown_table_qa/tables"
+                csv_output_dir = f"{cache_dir}/tables"
                 csv_paths = self.table_qa_generator_direct._extract_tables_to_csv(
                     text=merged_text,
                     output_dir=csv_output_dir,
@@ -206,12 +231,12 @@ class MarkdownTableQA_APIPipeline():
                     "table_csv_paths": csv_paths,
                 }])
                 
-                # Save results
-                output_path = "./.cache/markdown_table_qa/markdown_table_qa_result.json"
+                # Save results with prefix in filename
+                output_path = f"{cache_dir}/{output_prefix}_markdown_table_qa_result.json"
                 result_df.to_json(output_path, orient='records', force_ascii=False, indent=2)
             
             print("[Done] Merged Q/A generation complete!")
-            print("Results saved to ./.cache/markdown_table_qa/")
+            print(f"Results saved to {cache_dir}/")
         
         elif use_map_reduce:
             # Map-Reduce mode for large documents (process each separately)
@@ -227,7 +252,7 @@ class MarkdownTableQA_APIPipeline():
                 
                 # Generate Q/A using Map-Reduce
                 print("  [Step 2] Generating Q/A pairs using Map-Reduce...")
-                csv_output_dir = "./.cache/markdown_table_qa/tables"
+                csv_output_dir = f"{cache_dir}/tables"
                 result = self.map_reduce_qa_generator.process(chunks, csv_output_dir=csv_output_dir)
                 
                 all_results.append({
@@ -241,13 +266,13 @@ class MarkdownTableQA_APIPipeline():
                 
                 print(f"  [Done] Generated {len(result['qa_pairs'])} Q/A pairs")
             
-            # Save all results
-            output_path = "./.cache/markdown_table_qa/markdown_table_qa_result.json"
+            # Save all results with prefix in filename
+            output_path = f"{cache_dir}/{output_prefix}_markdown_table_qa_result.json"
             result_df = pd.DataFrame(all_results)
             result_df.to_json(output_path, orient='records', force_ascii=False, indent=2)
             
             print("\n[Done] Map-Reduce Q/A generation complete!")
-            print("Results saved to ./.cache/markdown_table_qa/")
+            print(f"Results saved to {cache_dir}/")
             
         else:
             # Direct mode for small documents
@@ -260,7 +285,7 @@ class MarkdownTableQA_APIPipeline():
                 outputs = self.table_qa_generator_direct.process_batch([doc['text']])
                 
                 # Extract tables to CSV
-                csv_output_dir = "./.cache/markdown_table_qa/tables"
+                csv_output_dir = f"{cache_dir}/tables"
                 csv_paths = self.table_qa_generator_direct._extract_tables_to_csv(
                     text=doc['text'],
                     output_dir=csv_output_dir,
@@ -278,17 +303,31 @@ class MarkdownTableQA_APIPipeline():
                 qa_count = len(outputs[0]['qa_pairs']) if outputs else 0
                 print(f"  [Done] Generated {qa_count} Q/A pairs")
             
-            # Save all results
-            output_path = "./.cache/markdown_table_qa/markdown_table_qa_result.json"
+            # Save all results with prefix in filename
+            output_path = f"{cache_dir}/{output_prefix}_markdown_table_qa_result.json"
             result_df = pd.DataFrame(all_results)
             result_df.to_json(output_path, orient='records', force_ascii=False, indent=2)
             
             print("\n[Done] Direct Q/A generation complete!")
-            print("Results saved to ./.cache/markdown_table_qa/")
+            print(f"Results saved to {cache_dir}/")
 
 
 if __name__ == "__main__":
-    pipeline = MarkdownTableQA_APIPipeline()
+    # ============================================================
+    # 使用说明：
+    # 1. 如需更换 markdown 文件夹，直接修改下面的 markdown_dir 参数
+    # 2. 输出文件会自动包含文件夹名称，不会覆盖之前的结果
+    # ============================================================
+    
+    # 方式1：使用默认目录
+    # pipeline = MarkdownTableQA_APIPipeline()
+    
+    # 方式2：指定自定义目录（修改这里的路径即可）
+    #markdown_dir = "/home/wangdeng/Github/dataflow/DataFlow/dataflow/example/markdown/Cleaned/Cleaned/01_Water/Data_Reports"
+    #markdown_dir = "/home/wangdeng/Github/dataflow/DataFlow/dataflow/example/markdown/Cleaned/Cleaned/03_Soil_SolidWaste/Standards"
+    markdown_dir = "/home/wangdeng/Github/dataflow/DataFlow/dataflow/example/markdown/Cleaned/Cleaned/05_Nuclear_Radiation/Standards"
+    pipeline = MarkdownTableQA_APIPipeline(markdown_dir=markdown_dir)
+    
     # use_map_reduce=True: For large documents (recommended)
     # use_map_reduce=False: For small documents within token limits
     # merge_mode=True: Merge all documents before generating Q/A

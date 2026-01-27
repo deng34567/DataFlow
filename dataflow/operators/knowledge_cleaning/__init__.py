@@ -16,6 +16,7 @@ if TYPE_CHECKING:
     from .generate.pdf_table_qa_generator import PDFTableQAGenerator
     from .generate.table_chunk_splitter import TableChunkSplitter
     from .generate.map_reduce_qa_generator import MapReduceQAGenerator
+    from .generate.policy_qa_generator import PolicyQAGenerator
 
 else:
     import sys

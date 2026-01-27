@@ -237,8 +237,18 @@ class MapReduceQAGenerator(OperatorABC):
 
     def _parse_qa_plan(self, response: str) -> List[Dict[str, Any]]:
         """Parse QA plan from LLM response."""
+        # Handle None or empty response
+        if not response:
+            self.logger.warning("Empty response received for QA plan")
+            return []
+        
         # First clean the response to remove thinking mode content
         cleaned = self._clean_llm_response(response)
+        
+        # Check if cleaned result is empty
+        if not cleaned:
+            self.logger.warning(f"Cleaned response is empty. Original response: {response[:200] if len(response) > 200 else response}")
+            return []
         
         # Try to parse cleaned response as JSON
         try:
