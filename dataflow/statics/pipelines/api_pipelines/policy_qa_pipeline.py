@@ -29,7 +29,7 @@ class PolicyQA_APIPipeline():
     """
     
     # Default markdown directory for policy documents
-    DEFAULT_MARKDOWN_DIR = "/home/wangdeng/Github/dataflow/DataFlow/dataflow/example/markdown/Cleaned/Cleaned/03_Soil_SolidWaste/Laws_Regulations"
+    DEFAULT_MARKDOWN_DIR = "/home/wangdeng/Github/dataflow/DataFlow/dataflow/example/markdown/Cleaned/Cleaned/02_Atmosphere/Laws_Regulations"
     
     def __init__(self, markdown_dir: str = None):
         """
@@ -50,7 +50,7 @@ class PolicyQA_APIPipeline():
 
         self.llm_serving = APILLMServing_request(
             api_url="https://oneapi.hkgai.net/v1/chat/completions",
-            model_name="qwen3next",
+            model_name="kimi-k2",
             max_workers=4,  # Reduced to avoid rate limiting
             temperature=0.3,
             timeout=(10.0, 300.0),  # Increased read timeout for policy processing
@@ -58,7 +58,7 @@ class PolicyQA_APIPipeline():
 
         # Step 1: Split into chunks (reuse existing splitter)
         self.chunk_splitter = TableChunkSplitter(
-            max_chunk_size=15000,  # Smaller chunks for policy text
+            max_chunk_size=8000,  # Smaller chunks for policy text
             min_chunk_size=500,
             context_before=300,
             context_after=300,

@@ -53,7 +53,7 @@ class MarkdownTableQA_APIPipeline():
         self.llm_serving = APILLMServing_request(
             api_url="https://oneapi.hkgai.net/v1/chat/completions",
             model_name="qwen3next",
-            max_workers=8,
+            max_workers=4,
             temperature=0.3,
         )
 
